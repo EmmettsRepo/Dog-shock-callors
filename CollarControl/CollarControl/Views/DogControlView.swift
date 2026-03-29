@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// Per-dog control view with stimulation slider, vibrate, and tone buttons.
+/// Commands are sent to this specific dog's paired collar only.
 struct DogControlView: View {
     let dog: Dog
     @ObservedObject var bleManager: BLEManager
     @ObservedObject var dogStore: DogStore
 
     @State private var stimLevel: Double
-    @State private var isStimulating = false
+    @State private var showScanner = false
 
     init(dog: Dog, bleManager: BLEManager, dogStore: DogStore) {
         self.dog = dog
@@ -16,93 +17,143 @@ struct DogControlView: View {
         self._stimLevel = State(initialValue: Double(dog.defaultStimLevel))
     }
 
-    private var isConnected: Bool {
-        bleManager.connectionState == .connected
+    private var isReady: Bool {
+        bleManager.isCollarReady(dog.peripheralUUID)
+    }
+
+    private var collarState: CollarConnectionState {
+        bleManager.connectionState(for: dog.peripheralUUID)
     }
 
     var body: some View {
         VStack(spacing: 32) {
-            // Dog avatar
-            ZStack {
-                Circle()
-                    .fill(dog.color.gradient)
-                    .frame(width: 100, height: 100)
-                Text(String(dog.name.prefix(1)).uppercased())
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(.white)
+            // Dog avatar with connection badge
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(dog.color.gradient)
+                        .frame(width: 100, height: 100)
+                    Text(String(dog.name.prefix(1)).uppercased())
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(.white)
+                }
+
+                if dog.isPaired {
+                    CollarStatusBadge(state: collarState)
+                }
             }
             .padding(.top, 16)
 
-            // Stimulation level
-            VStack(spacing: 8) {
-                Text("Stimulation Level")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            if !dog.isPaired {
+                // Not paired - show pairing prompt
+                VStack(spacing: 16) {
+                    Text("No collar paired to \(dog.name)")
+                        .foregroundStyle(.secondary)
+                    Button("Pair Collar") { showScanner = true }
+                        .buttonStyle(.borderedProminent)
+                }
+            } else {
+                // Stimulation level
+                VStack(spacing: 8) {
+                    Text("Stimulation Level")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
-                Text("\(Int(stimLevel))")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .foregroundStyle(stimColor)
-                    .contentTransition(.numericText())
-                    .animation(.snappy, value: stimLevel)
+                    Text("\(Int(stimLevel))")
+                        .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .foregroundStyle(stimColor)
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: stimLevel)
 
-                Slider(value: $stimLevel, in: 1...100, step: 1)
-                    .tint(stimColor)
-                    .padding(.horizontal, 32)
-            }
+                    Slider(value: $stimLevel, in: 1...100, step: 1)
+                        .tint(stimColor)
+                        .padding(.horizontal, 32)
+                }
 
-            // Stim button (hold to send)
-            Button {
-                sendStim()
-            } label: {
-                Label("Stim", systemImage: "bolt.fill")
-                    .font(.title2.bold())
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(!isConnected)
-            .padding(.horizontal, 32)
-
-            // Vibrate and Tone buttons
-            HStack(spacing: 16) {
+                // Stim button
                 Button {
-                    sendVibrate()
+                    sendStim()
                 } label: {
-                    Label("Vibrate", systemImage: "iphone.radiowaves.left.and.right")
+                    Label("Stim", systemImage: "bolt.fill")
+                        .font(.title2.bold())
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 16)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .disabled(!isConnected)
+                .tint(.red)
+                .disabled(!isReady)
+                .padding(.horizontal, 32)
 
-                Button {
-                    sendTone()
-                } label: {
-                    Label("Tone", systemImage: "speaker.wave.2.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                // Vibrate and Tone buttons
+                HStack(spacing: 16) {
+                    Button {
+                        sendVibrate()
+                    } label: {
+                        Label("Vibrate", systemImage: "iphone.radiowaves.left.and.right")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(!isReady)
+
+                    Button {
+                        sendTone()
+                    } label: {
+                        Label("Tone", systemImage: "speaker.wave.2.fill")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .disabled(!isReady)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.blue)
-                .disabled(!isConnected)
-            }
-            .padding(.horizontal, 32)
+                .padding(.horizontal, 32)
 
-            if !isConnected {
-                Text("Connect to ESP32 bridge to send commands")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                if !isReady && dog.isPaired {
+                    Text("Waiting for collar to connect...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
         }
         .navigationTitle(dog.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if dog.isPaired {
+                        Button("Reconnect Collar") {
+                            if let uuid = dog.peripheralUUID {
+                                bleManager.connectPairedCollar(peripheralUUID: uuid)
+                            }
+                        }
+                    }
+                    Button("Change Collar") { showScanner = true }
+                    Button("Delete Dog", role: .destructive) {
+                        if let uuid = dog.peripheralUUID {
+                            bleManager.disconnectCollar(peripheralUUID: uuid)
+                        }
+                        dogStore.deleteDog(dog)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showScanner) {
+            CollarScannerView(bleManager: bleManager, dogStore: dogStore) { uuid, profile in
+                var updated = dog
+                updated.peripheralUUID = uuid
+                updated.collarProfileID = profile.id
+                dogStore.updateDog(updated)
+                bleManager.pairCollar(peripheralUUID: uuid, profile: profile)
+                showScanner = false
+            }
+        }
         .onChange(of: stimLevel) { _, newValue in
-            // Save as default for this dog
             var updated = dog
             updated.defaultStimLevel = Int(newValue)
             dogStore.updateDog(updated)
@@ -117,14 +168,17 @@ struct DogControlView: View {
     }
 
     private func sendStim() {
-        bleManager.sendStimulation(collarID: dog.collarID, level: Int(stimLevel))
+        guard let uuid = dog.peripheralUUID else { return }
+        bleManager.sendStimulation(to: uuid, level: Int(stimLevel))
     }
 
     private func sendVibrate() {
-        bleManager.sendVibration(collarID: dog.collarID)
+        guard let uuid = dog.peripheralUUID else { return }
+        bleManager.sendVibration(to: uuid)
     }
 
     private func sendTone() {
-        bleManager.sendTone(collarID: dog.collarID)
+        guard let uuid = dog.peripheralUUID else { return }
+        bleManager.sendTone(to: uuid)
     }
 }

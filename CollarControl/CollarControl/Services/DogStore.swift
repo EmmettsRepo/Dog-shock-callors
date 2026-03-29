@@ -9,19 +9,23 @@ final class DogStore: ObservableObject {
         didSet { save() }
     }
 
-    private let key = "saved_dogs"
+    private let key = "saved_dogs_v2"
 
     init() {
         if let data = UserDefaults.standard.data(forKey: key),
            let decoded = try? JSONDecoder().decode([Dog].self, from: data) {
             dogs = decoded
         } else {
-            // Pre-populate with Jack
-            dogs = [Dog(name: "Jack", collarID: 0)]
+            dogs = []
         }
     }
 
     func addDog(_ dog: Dog) {
+        // Prevent duplicate peripheral UUID assignments
+        if let uuid = dog.peripheralUUID,
+           dogs.contains(where: { $0.peripheralUUID == uuid }) {
+            return
+        }
         dogs.append(dog)
     }
 
@@ -37,6 +41,10 @@ final class DogStore: ObservableObject {
 
     func dog(named name: String) -> Dog? {
         dogs.first { $0.name.lowercased() == name.lowercased() }
+    }
+
+    func dog(withPeripheralUUID uuid: UUID) -> Dog? {
+        dogs.first { $0.peripheralUUID == uuid }
     }
 
     private func save() {

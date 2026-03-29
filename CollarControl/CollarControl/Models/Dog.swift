@@ -1,20 +1,28 @@
 import Foundation
 import SwiftUI
 
-/// A dog profile with an assigned collar channel.
+/// A dog profile with a paired BLE collar.
 struct Dog: Identifiable, Codable, Hashable, Sendable {
     var id: UUID
     var name: String
-    var collarID: Int
+    /// The CBPeripheral.identifier UUID of the paired collar. Nil if not yet paired.
+    var peripheralUUID: UUID?
+    /// The collar profile ID used to encode commands for this collar.
+    var collarProfileID: String?
     var defaultStimLevel: Int
     var colorName: String
 
-    init(id: UUID = UUID(), name: String, collarID: Int, defaultStimLevel: Int = 10, colorName: String = "blue") {
+    init(id: UUID = UUID(), name: String, peripheralUUID: UUID? = nil, collarProfileID: String? = nil, defaultStimLevel: Int = 10, colorName: String = "blue") {
         self.id = id
         self.name = name
-        self.collarID = collarID
+        self.peripheralUUID = peripheralUUID
+        self.collarProfileID = collarProfileID
         self.defaultStimLevel = defaultStimLevel
         self.colorName = colorName
+    }
+
+    var isPaired: Bool {
+        peripheralUUID != nil && collarProfileID != nil
     }
 
     var color: Color {

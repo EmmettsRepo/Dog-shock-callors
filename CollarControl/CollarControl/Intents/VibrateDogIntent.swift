@@ -9,20 +9,20 @@ struct VibrateDogIntent: AppIntent {
     @Parameter(title: "Dog Name")
     var dogName: String
 
-    @Parameter(title: "Duration (tenths of second)", default: 10)
-    var duration: Int
-
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let store = DogStore.shared
         guard let dog = store.dog(named: dogName) else {
             return .result(dialog: "I couldn't find a dog named \(dogName).")
         }
-        let ble = BLEManager.shared
-        guard ble.connectionState == .connected else {
-            return .result(dialog: "The collar bridge is not connected.")
+        guard let uuid = dog.peripheralUUID else {
+            return .result(dialog: "\(dog.name) doesn't have a collar paired yet.")
         }
-        ble.sendVibration(collarID: dog.collarID, duration: duration)
+        let ble = BLEManager.shared
+        guard ble.isCollarReady(uuid) else {
+            return .result(dialog: "\(dog.name)'s collar is not connected.")
+        }
+        ble.sendVibration(to: uuid)
         return .result(dialog: "Vibrating \(dog.name)'s collar.")
     }
 }

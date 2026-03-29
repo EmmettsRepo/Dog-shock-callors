@@ -8,6 +8,9 @@ struct CollarControlApp: App {
     var body: some Scene {
         WindowGroup {
             DogListView(dogStore: dogStore, bleManager: bleManager)
+                .onAppear {
+                    bleManager.connectAllPairedCollars(dogs: dogStore.dogs)
+                }
         }
     }
 }

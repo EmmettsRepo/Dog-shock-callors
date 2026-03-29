@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Main screen showing all dogs with quick-action buttons.
+/// Main screen showing all dogs with per-dog connection status.
 struct DogListView: View {
     @ObservedObject var dogStore: DogStore
     @ObservedObject var bleManager: BLEManager
@@ -9,14 +9,29 @@ struct DogListView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
-                    ForEach(dogStore.dogs) { dog in
-                        NavigationLink(value: dog) {
-                            DogCard(dog: dog, isConnected: bleManager.connectionState == .connected)
+                if dogStore.dogs.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Dogs", systemImage: "dog")
+                    } description: {
+                        Text("Add your first dog and pair their BLE collar.")
+                    } actions: {
+                        Button("Add Dog") { showingAddDog = true }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.top, 60)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16)], spacing: 16) {
+                        ForEach(dogStore.dogs) { dog in
+                            NavigationLink(value: dog) {
+                                DogCard(
+                                    dog: dog,
+                                    connectionState: bleManager.connectionState(for: dog.peripheralUUID)
+                                )
+                            }
                         }
                     }
+                    .padding()
                 }
-                .padding()
             }
             .navigationTitle("My Dogs")
             .navigationDestination(for: Dog.self) { dog in
@@ -24,7 +39,7 @@ struct DogListView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    ConnectionStatusView(bleManager: bleManager)
+                    ConnectionSummaryView(collarStates: bleManager.collarStates)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showingAddDog = true } label: {
@@ -33,19 +48,22 @@ struct DogListView: View {
                 }
             }
             .sheet(isPresented: $showingAddDog) {
-                AddDogView(dogStore: dogStore)
+                AddDogView(dogStore: dogStore, bleManager: bleManager)
+            }
+            .onAppear {
+                bleManager.connectAllPairedCollars(dogs: dogStore.dogs)
             }
         }
     }
 }
 
-/// A card representing a dog in the grid.
+/// A card representing a dog in the grid with connection indicator.
 struct DogCard: View {
     let dog: Dog
-    let isConnected: Bool
+    let connectionState: CollarConnectionState
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             ZStack {
                 Circle()
                     .fill(dog.color.gradient)
@@ -59,9 +77,13 @@ struct DogCard: View {
                 .font(.headline)
                 .foregroundStyle(.primary)
 
-            Text("Collar \(dog.collarID)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if dog.isPaired {
+                CollarStatusBadge(state: connectionState)
+            } else {
+                Text("Not paired")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)

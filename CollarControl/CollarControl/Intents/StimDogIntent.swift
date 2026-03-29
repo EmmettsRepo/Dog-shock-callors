@@ -12,21 +12,21 @@ struct StimDogIntent: AppIntent {
     @Parameter(title: "Level (1-100)", default: 10)
     var level: Int
 
-    @Parameter(title: "Duration (tenths of second)", default: 5)
-    var duration: Int
-
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let store = DogStore.shared
         guard let dog = store.dog(named: dogName) else {
             return .result(dialog: "I couldn't find a dog named \(dogName).")
         }
+        guard let uuid = dog.peripheralUUID else {
+            return .result(dialog: "\(dog.name) doesn't have a collar paired yet.")
+        }
         let ble = BLEManager.shared
-        guard ble.connectionState == .connected else {
-            return .result(dialog: "The collar bridge is not connected.")
+        guard ble.isCollarReady(uuid) else {
+            return .result(dialog: "\(dog.name)'s collar is not connected.")
         }
         let clampedLevel = min(max(level, 1), 100)
-        ble.sendStimulation(collarID: dog.collarID, level: clampedLevel, duration: duration)
+        ble.sendStimulation(to: uuid, level: clampedLevel)
         return .result(dialog: "Sending level \(clampedLevel) stimulation to \(dog.name)'s collar.")
     }
 }
